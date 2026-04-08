@@ -78,7 +78,8 @@ def start_negotiation(task, session_id, chat_history):
             offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
         
         vendor_msg = obs.get("vendor_message", "Negotiation started")
-        chatbot_history = [{"role": "assistant", "content": vendor_msg}]
+        # Gradio chatbot expects tuples: [(user_msg, assistant_msg), ...]
+        chatbot_history = [(None, vendor_msg)]
         
         return "Negotiation started successfully!", new_session_id, offer_table, chatbot_history, 0.0, str(obs.get("round_number", 0)), chatbot_history
     
@@ -151,11 +152,10 @@ def submit_offer(session_id, chat_history, move, price, sla, support, payment, j
         
         chatbot_history = chat_history or []
         
-        # Add user and vendor messages to chatbot
+        # Add user and vendor messages to chatbot (as tuples for Gradio)
         user_message = f"{move.capitalize()} | ${price} | SLA {sla}% | {support} | {payment}"
-        chatbot_history.append({"role": "user", "content": user_message})
         vendor_msg = obs.get("vendor_message", "Offer received")
-        chatbot_history.append({"role": "assistant", "content": vendor_msg})
+        chatbot_history.append((user_message, vendor_msg))
         
         # Update deal value and round
         deal_value = obs.get("deal_value_so_far", 0.0)
