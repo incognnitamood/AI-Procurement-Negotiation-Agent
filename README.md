@@ -1,9 +1,7 @@
 ---
 title: AI Procurement Negotiation Agent
 emoji: 🤝
-sdk: gradio
-sdk_version: 4.44.1
-app_file: gradio_ui.py
+sdk: docker
 python_version: 3.11
 ---
 
