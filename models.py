@@ -2,12 +2,11 @@
 Negotiation environment models for OpenEnv.
 """
 
-from openenv.core.env_server import Action, Observation, State
-from pydantic import Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 
 
-class NegotiationAction(Action):
+class NegotiationAction(BaseModel):
     """
     Represents a negotiation action taken by the buyer agent.
     
@@ -22,7 +21,8 @@ class NegotiationAction(Action):
     justification: str
     split_products: Optional[List[str]] = None
     
-    @validator("move")
+    @field_validator("move")
+    @classmethod
     def validate_move(cls, v):
         """Ensure move is one of the valid negotiation actions."""
         valid_moves = {"propose", "accept", "reject", "counter"}
@@ -30,7 +30,8 @@ class NegotiationAction(Action):
             raise ValueError(f"move must be one of {valid_moves}, got {v}")
         return v
     
-    @validator("offer")
+    @field_validator("offer")
+    @classmethod
     def validate_offer(cls, v):
         """Ensure offer is a non-empty dictionary with valid price if present."""
         if not isinstance(v, dict) or len(v) == 0:
@@ -44,7 +45,7 @@ class NegotiationAction(Action):
         return v
 
 
-class NegotiationObservation(Observation):
+class NegotiationObservation(BaseModel):
     """
     Represents the observation received from the negotiation environment.
     
@@ -57,6 +58,9 @@ class NegotiationObservation(Observation):
         deal_value_so_far: Accumulated value from the deal
         available_moves: List of valid moves available to the agent
         task_brief: Brief description of the negotiation task
+        done: Whether negotiation is complete
+        reward: Reward value for the step
+        metadata: Additional metadata
     """
     vendor_response: str
     current_offer: Dict[str, Any]
@@ -66,8 +70,12 @@ class NegotiationObservation(Observation):
     deal_value_so_far: float
     available_moves: List[str]
     task_brief: str
+    done: bool = False
+    reward: Optional[float] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     
-    @validator("available_moves")
+    @field_validator("available_moves")
+    @classmethod
     def validate_available_moves(cls, v):
         """Ensure all moves in available_moves are valid."""
         valid_moves = {"propose", "accept", "reject", "counter"}
@@ -77,7 +85,7 @@ class NegotiationObservation(Observation):
         return v
 
 
-class NegotiationState(State):
+class NegotiationState(BaseModel):
     """
     Represents the internal state of the negotiation.
     
@@ -100,7 +108,8 @@ class NegotiationState(State):
     done: bool = False
     final_score: Optional[float] = None
     
-    @validator("current_offer", "initial_offer", "buyer_targets", pre=True, always=True)
+    @field_validator("current_offer", "initial_offer", "buyer_targets", mode="before")
+    @classmethod
     def validate_sla(cls, v):
         """Validate SLA values are between 99.0 and 100.0 if present."""
         if isinstance(v, dict):

@@ -2,121 +2,165 @@ import gradio as gr
 import requests
 import uuid
 import json
+import traceback
 from scenarios import SCENARIOS
+
+# Configure connection details
+API_URL = "http://localhost:8000"
+MAX_RETRIES = 3
+RETRY_DELAY = 0.5
 
 def start_negotiation(task, session_id, chat_history):
     if session_id:
-        return "Already started", session_id, [], chat_history or [], 0.0, "0", chat_history or []
+        return "Session already active", session_id, [], chat_history or [], 0.0, "0", chat_history or []
     
-    new_session_id = str(uuid.uuid4())
-    response = requests.post("http://localhost:8000/reset", json={"task": task, "session_id": new_session_id})
-    if response.status_code != 200:
-        return f"Error: {response.text}", None, [], [], 0.0, "0", []
+    try:
+        new_session_id = str(uuid.uuid4())
+        payload = {"task": task, "session_id": new_session_id}
+        
+        response = requests.post(
+            f"{API_URL}/reset",
+            json=payload,
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            error_msg = f"Server error ({response.status_code}): {response.text}"
+            print(f"ERROR in start_negotiation: {error_msg}")
+            return error_msg, None, [], [], 0.0, "0", []
+        
+        data = response.json()
+        obs = data.get("observation", {})
+        
+        # Get buyer targets from scenario
+        scenario = SCENARIOS.get(task, {})
+        buyer_targets = scenario.get("buyer_targets", {})
+        
+        # Prepopulate offer table with actual targets
+        offer_table = []
+        current_offer = obs.get("current_offer", {})
+        
+        if "price" in current_offer:
+            target_price = buyer_targets.get("price", "N/A")
+            target_str = f"${target_price}" if target_price != "N/A" else str(target_price)
+            offer_table.append(["Price", f"${current_offer['price']}", target_str])
+        
+        if "sla" in current_offer:
+            target_sla = buyer_targets.get("sla", "N/A")
+            target_str = f"{target_sla}%" if target_sla != "N/A" else str(target_sla)
+            offer_table.append(["SLA", f"{current_offer['sla']}%", target_str])
+        
+        if "support_tier" in current_offer:
+            target_support = buyer_targets.get("support_tier", "N/A")
+            offer_table.append(["Support", current_offer["support_tier"], str(target_support)])
+        
+        if "payment_terms" in current_offer:
+            target_payment = buyer_targets.get("payment_terms", "N/A")
+            offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
+        
+        vendor_msg = obs.get("vendor_message", "Negotiation started")
+        chatbot_history = [{"role": "assistant", "content": vendor_msg}]
+        
+        return "Negotiation started successfully!", new_session_id, offer_table, chatbot_history, 0.0, str(obs.get("round_number", 0)), chatbot_history
     
-    data = response.json()
-    obs = data["observation"]
-    
-    # Get buyer targets from scenario
-    scenario = SCENARIOS.get(task, {})
-    buyer_targets = scenario.get("buyer_targets", {})
-    
-    # Prepopulate offer table with actual targets
-    offer_table = []
-    current_offer = obs["current_offer"]
-    if "price" in current_offer:
-        target_price = buyer_targets.get("price", "N/A")
-        if target_price != "N/A":
-            target_str = f"${target_price}"
-        else:
-            target_str = str(target_price)
-        offer_table.append(["Price", f"${current_offer['price']}", target_str])
-    if "sla" in current_offer:
-        target_sla = buyer_targets.get("sla", "N/A")
-        if target_sla != "N/A":
-            target_str = f"{target_sla}%"
-        else:
-            target_str = str(target_sla)
-        offer_table.append(["SLA", f"{current_offer['sla']}%", target_str])
-    if "support_tier" in current_offer:
-        target_support = buyer_targets.get("support_tier", "N/A")
-        offer_table.append(["Support", current_offer["support_tier"], str(target_support)])
-    if "payment_terms" in current_offer:
-        target_payment = buyer_targets.get("payment_terms", "N/A")
-        offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
-    
-    chatbot_history = [{"role": "assistant", "content": obs["vendor_message"]}]
-    return "Negotiation started", new_session_id, offer_table, chatbot_history, 0.0, str(obs["round_number"]), chatbot_history
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Connection error: Cannot reach server at {API_URL}. Is the server running?"
+        print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
+        return error_msg, None, [], [], 0.0, "0", []
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"ERROR in start_negotiation: {error_msg}\n{traceback.format_exc()}")
+        return error_msg, None, [], [], 0.0, "0", []
 
 def submit_offer(session_id, chat_history, move, price, sla, support, payment, justification, task):
     if not session_id:
         return "Start negotiation first", [], chat_history or [], 0.0, "0", chat_history or []
     
-    action = {
-        "move": move,
-        "offer": {
-            "price": price,
-            "sla": sla,
-            "support_tier": support,
-            "payment_terms": payment
-        },
-        "justification": justification
-    }
-    
-    response = requests.post("http://localhost:8000/step", json={"session_id": session_id, "action": action})
-    if response.status_code != 200:
-        return f"Error: {response.text}", [], chat_history or [], 0.0, "0", chat_history or []
-    
-    data = response.json()
-    obs = data["observation"]
-    
-    # Get buyer targets from scenario
-    scenario = SCENARIOS.get(task, {})
-    buyer_targets = scenario.get("buyer_targets", {})
-    
-    # Update offer table with actual targets
-    offer_table = []
-    current_offer = obs["current_offer"]
-    if "price" in current_offer:
-        target_price = buyer_targets.get("price", "N/A")
-        if target_price != "N/A":
-            target_str = f"${target_price}"
+    try:
+        action = {
+            "move": move,
+            "offer": {
+                "price": price,
+                "sla": sla,
+                "support_tier": support,
+                "payment_terms": payment
+            },
+            "justification": justification
+        }
+        
+        response = requests.post(
+            f"{API_URL}/step",
+            json={"session_id": session_id, "action": action},
+            timeout=10
+        )
+        
+        if response.status_code != 200:
+            error_msg = f"Server error ({response.status_code}): {response.text}"
+            print(f"ERROR in submit_offer: {error_msg}")
+            return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
+        
+        data = response.json()
+        obs = data.get("observation", {})
+        
+        # Get buyer targets from scenario
+        scenario = SCENARIOS.get(task, {})
+        buyer_targets = scenario.get("buyer_targets", {})
+        
+        # Update offer table with actual targets
+        offer_table = []
+        current_offer = obs.get("current_offer", {})
+        
+        if "price" in current_offer:
+            target_price = buyer_targets.get("price", "N/A")
+            target_str = f"${target_price}" if target_price != "N/A" else str(target_price)
+            offer_table.append(["Price", f"${current_offer['price']}", target_str])
+        
+        if "sla" in current_offer:
+            target_sla = buyer_targets.get("sla", "N/A")
+            target_str = f"{target_sla}%" if target_sla != "N/A" else str(target_sla)
+            offer_table.append(["SLA", f"{current_offer['sla']}%", target_str])
+        
+        if "support_tier" in current_offer:
+            target_support = buyer_targets.get("support_tier", "N/A")
+            offer_table.append(["Support", current_offer["support_tier"], str(target_support)])
+        
+        if "payment_terms" in current_offer:
+            target_payment = buyer_targets.get("payment_terms", "N/A")
+            offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
+        
+        chatbot_history = chat_history or []
+        
+        # Add user and vendor messages to chatbot
+        user_message = f"{move.capitalize()} | ${price} | SLA {sla}% | {support} | {payment}"
+        chatbot_history.append({"role": "user", "content": user_message})
+        vendor_msg = obs.get("vendor_message", "Offer received")
+        chatbot_history.append({"role": "assistant", "content": vendor_msg})
+        
+        # Update deal value and round
+        deal_value = obs.get("deal_value_so_far", 0.0)
+        round_num = str(obs.get("round_number", 0))
+        
+        # Check if done
+        if data.get("done", False):
+            vendor_response = obs.get("vendor_response", "")
+            if vendor_response == "accepted":
+                status = "Deal signed successfully!"
+            else:
+                status = "Negotiation ended"
         else:
-            target_str = str(target_price)
-        offer_table.append(["Price", f"${current_offer['price']}", target_str])
-    if "sla" in current_offer:
-        target_sla = buyer_targets.get("sla", "N/A")
-        if target_sla != "N/A":
-            target_str = f"{target_sla}%"
-        else:
-            target_str = str(target_sla)
-        offer_table.append(["SLA", f"{current_offer['sla']}%", target_str])
-    if "support_tier" in current_offer:
-        target_support = buyer_targets.get("support_tier", "N/A")
-        offer_table.append(["Support", current_offer["support_tier"], str(target_support)])
-    if "payment_terms" in current_offer:
-        target_payment = buyer_targets.get("payment_terms", "N/A")
-        offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
+            status = "Offer submitted, waiting for vendor response..."
+        
+        return status, offer_table, chatbot_history, deal_value, round_num, chatbot_history
     
-    chatbot_history = chat_history or []
-    user_message = f"{move.capitalize()} | ${price} | SLA {sla}% | {support} | {payment}"
-    chatbot_history.append({"role": "user", "content": user_message})
-    chatbot_history.append({"role": "assistant", "content": obs["vendor_message"]})
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Connection error: Cannot reach server at {API_URL}"
+        print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
+        return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        print(f"ERROR in submit_offer: {error_msg}\n{traceback.format_exc()}")
+        return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
 
-    
-    # Update deal value and round
-    deal_value = obs["deal_value_so_far"]
-    round_num = str(obs["round_number"])
-    
-    # Check if done
-    if data["done"]:
-        if obs["vendor_response"] == "accepted":
-            status = "✅ DEAL SIGNED!"
-        else:
-            status = "❌ NEGOTIATION COLLAPSED"
-    else:
-        status = "Continue negotiating"
-    
-    return status, offer_table, chatbot_history, deal_value, round_num, chatbot_history
 
 with gr.Blocks(title="🤝 Procurement Negotiation Simulator") as demo:
     gr.Markdown("# 🤝 Procurement Negotiation Simulator")

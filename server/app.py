@@ -12,20 +12,21 @@ SESSIONS = {}
 @app.post("/reset")
 async def reset(request: dict):
     try:
-        task = request.get("task")
-        session_id = request.get("session_id")
-        if not task or not session_id:
-            raise HTTPException(status_code=400, detail="Missing task or session_id")
+        # Support both "task" and "task_name" keys for compatibility
+        task = request.get("task") or request.get("task_name", "saas_renewal")
+        session_id = request.get("session_id") or f"session_{hash(str(request))}"
         
         env = NegotiationEnvironment()
         obs = env.reset(task)
         SESSIONS[session_id] = env
         
         return {
-            "observation": obs.dict(),
+            "observation": obs.model_dump(),
             "info": {"task": task, "session_id": session_id}
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step")
@@ -44,12 +45,14 @@ async def step(request: dict):
         obs, reward, done, info = env.step(action)
         
         return {
-            "observation": obs.dict(),
+            "observation": obs.model_dump(),
             "reward": float(reward),
             "done": bool(done),
             "info": info
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/state")
@@ -60,8 +63,10 @@ async def get_state(session_id: str):
         
         env = SESSIONS[session_id]
         state = env.state()
-        return {"state": state.dict()}
+        return {"state": state.model_dump()}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
