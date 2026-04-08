@@ -1,17 +1,21 @@
 """
-FastAPI Procurement Negotiation OpenEnv
-Streamlined API server for OpenEnv validation
+FastAPI + Gradio Procurement Negotiation OpenEnv
+Single-process deployment with API and UI combined
 """
 
 import traceback
-from typing import Dict, Any, Optional
 import uuid
+import json
+from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
+import gradio as gr
+import requests
+
 from environment import NegotiationEnvironment
 from models import NegotiationAction
 
-print("[INFO] Starting OpenEnv API Server", flush=True)
+print("[INFO] Starting OpenEnv API Server with Gradio UI", flush=True)
 
 # Session storage
 SESSIONS: Dict[str, Dict[str, Any]] = {}
@@ -125,11 +129,192 @@ async def health():
     """Health check."""
     return {"status": "ok"}
 
+# ==================== GRADIO UI ====================
+
+def start_negotiation(task: str) -> tuple:
+    """Initialize negotiation via API."""
+    try:
+        api_url = "http://localhost:7860"
+        resp = requests.post(f"{api_url}/reset", json={"task": task}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        session_id = data["info"]["session_id"]
+        obs = data["observation"]
+        
+        response_json = json.dumps(data, indent=2)
+        
+        return (
+            f"✅ Session started: {session_id[:8]}...",
+            session_id,
+            response_json,
+            obs.get("vendor_message", ""),
+            str(obs.get("current_offer", {})),
+            obs.get("deal_value_so_far", 0.0),
+            str(obs.get("round_number", 0))
+        )
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}"
+        print(f"[ERROR] start_negotiation: {error_msg}")
+        return (error_msg, "", json.dumps({"error": str(e)}, indent=2), "", "{}", 0.0, "0")
+
+def send_action(
+    session_id: str,
+    move: str,
+    price: float,
+    payment_terms: str,
+    sla: float,
+    support_tier: str,
+    justification: str
+) -> tuple:
+    """Submit action via API."""
+    if not session_id:
+        return ("❌ No active session", json.dumps({"error": "Start negotiation first"}, indent=2), "", "{}", 0.0, "0")
+    
+    try:
+        api_url = "http://localhost:7860"
+        
+        action = {
+            "move": move,
+            "offer": {
+                "price": float(price),
+                "payment_terms": payment_terms,
+                "sla": float(sla),
+                "support_tier": support_tier
+            },
+            "justification": justification
+        }
+        
+        resp = requests.post(
+            f"{api_url}/step",
+            json={"session_id": session_id, "action": action},
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        
+        obs = data["observation"]
+        reward = data.get("reward", 0)
+        done = data.get("done", False)
+        
+        response_json = json.dumps(data, indent=2)
+        
+        status = f"✅ Action sent | Reward: {reward:.3f} | Done: {done}"
+        if done:
+            status += f" | Final Score: {obs.get('deal_value_so_far', 0):.3f}"
+        
+        return (
+            status,
+            response_json,
+            obs.get("vendor_message", ""),
+            str(obs.get("current_offer", {})),
+            obs.get("deal_value_so_far", 0.0),
+            str(obs.get("round_number", 0))
+        )
+    except Exception as e:
+        error_msg = f"❌ Error: {str(e)}"
+        print(f"[ERROR] send_action: {error_msg}")
+        return (error_msg, json.dumps({"error": str(e)}, indent=2), "", "{}", 0.0, "0")
+
+# Build Gradio UI
+with gr.Blocks(title="🤝 Procurement Negotiation Agent", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("# 🤝 Procurement Negotiation Agent")
+    gr.Markdown("Negotiate across **price**, **SLA**, **support tier**, and **payment terms** with an adaptive vendor.")
+    
+    session_id_state = gr.State("")
+    
+    with gr.Group():
+        gr.Markdown("## 1️⃣ Start Negotiation")
+        
+        with gr.Row():
+            task_dropdown = gr.Dropdown(
+                label="Select Task",
+                choices=["saas_renewal", "cloud_infra_deal", "enterprise_bundle"],
+                value="saas_renewal",
+                scale=1
+            )
+            start_btn = gr.Button("🚀 Start", variant="primary", scale=1)
+        
+        status_textbox = gr.Textbox(label="Status", interactive=False, lines=1)
+    
+    with gr.Group():
+        gr.Markdown("## 2️⃣ Submit Your Offer")
+        
+        with gr.Row():
+            move_dropdown = gr.Dropdown(
+                label="Move",
+                choices=["propose", "counter", "accept", "reject"],
+                value="propose",
+                scale=1
+            )
+            price_number = gr.Number(label="Price ($)", value=115000, scale=1)
+            sla_slider = gr.Slider(label="SLA %", minimum=99.0, maximum=100.0, step=0.01, value=99.5, scale=1)
+        
+        with gr.Row():
+            support_dropdown = gr.Dropdown(
+                label="Support Tier",
+                choices=["standard", "business", "premium"],
+                value="standard",
+                scale=1
+            )
+            payment_dropdown = gr.Dropdown(
+                label="Payment Terms",
+                choices=["net-30", "net-45", "net-60", "net-90"],
+                value="net-30",
+                scale=1
+            )
+            justification_textbox = gr.Textbox(
+                label="Justification",
+                lines=1,
+                scale=2
+            )
+        
+        send_btn = gr.Button("📨 Send Action", variant="primary")
+    
+    with gr.Group():
+        gr.Markdown("## 3️⃣ Response")
+        
+        response_json = gr.Textbox(
+            label="Full API Response (JSON)",
+            lines=8,
+            interactive=False,
+            max_lines=16
+        )
+        
+        with gr.Row():
+            vendor_msg = gr.Textbox(label="Vendor Message", interactive=False, scale=2)
+            current_offer = gr.Textbox(label="Current Offer", interactive=False, scale=1)
+        
+        with gr.Row():
+            deal_value = gr.Number(label="Deal Value", interactive=False, value=0.0, scale=1)
+            round_num = gr.Textbox(label="Round", interactive=False, scale=1)
+    
+    # Event handlers
+    start_btn.click(
+        start_negotiation,
+        inputs=[task_dropdown],
+        outputs=[status_textbox, session_id_state, response_json, vendor_msg, current_offer, deal_value, round_num]
+    )
+    
+    send_btn.click(
+        send_action,
+        inputs=[
+            session_id_state, move_dropdown, price_number, payment_dropdown,
+            sla_slider, support_dropdown, justification_textbox
+        ],
+        outputs=[status_textbox, response_json, vendor_msg, current_offer, deal_value, round_num]
+    )
+
+# Mount Gradio at root
+print("[INFO] Mounting Gradio UI at /", flush=True)
+app = gr.mount_gradio_app(app, demo, path="/")
+
 def main():
     """Main entry point for the application."""
     import uvicorn
-    print("[INFO] OpenEnv API Server starting on 0.0.0.0:7860")
-    print("[INFO] Endpoints: /reset (POST), /step (POST), /state (GET), /health (GET)")
+    print("[INFO] OpenEnv API Server + Gradio UI starting on 0.0.0.0:7860", flush=True)
+    print("[INFO] API Endpoints: /reset (POST), /step (POST), /state (GET), /health (GET)", flush=True)
+    print("[INFO] UI available at http://localhost:7860", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
