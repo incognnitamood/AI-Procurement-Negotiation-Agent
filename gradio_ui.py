@@ -3,12 +3,16 @@ import requests
 import uuid
 import json
 import traceback
+import os
+import time
 from scenarios import SCENARIOS
 
-# Configure connection details
-API_URL = "http://localhost:8000"
-MAX_RETRIES = 5
+# Configure connection details - allow override via environment variable
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+MAX_RETRIES = 10
 RETRY_DELAY = 0.5
+
+print(f"[INFO] Gradio UI initialized. Using API_URL: {API_URL}")
 
 def _retry_request(method, url, **kwargs):
     """Retry a request with exponential backoff."""
@@ -20,10 +24,12 @@ def _retry_request(method, url, **kwargs):
                 return requests.get(url, **kwargs)
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
             if attempt == MAX_RETRIES - 1:
-                raise  # Last attempt, raise the error
-            wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff
-            print(f"Connection attempt {attempt + 1}/{MAX_RETRIES} failed, retrying in {wait_time}s...")
-            import time
+                # Last attempt failed, raise the error
+                print(f"[ERROR] Final attempt failed after {MAX_RETRIES} retries: {str(e)}")
+                raise
+            
+            wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff: 0.5s, 1s, 2s, 4s, 8s, etc.
+            print(f"[RETRY] Attempt {attempt + 1}/{MAX_RETRIES} failed, retrying in {wait_time}s... (Error: {type(e).__name__})")
             time.sleep(wait_time)
     return None
 
