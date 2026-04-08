@@ -504,7 +504,7 @@ MIT License — See LICENSE file
 ## 👤 Author
 
 **Sujat's Procurement Negotiation Agent**  
-GitHub: [incognnitamoooddd/AI-Procurement-Negotiation-Agent](https://github.com/incognnitamoooddd/AI-Procurement-Negotiation-Agent)
+GitHub: [incognnitamoooddd/AI-Procurement-Negotiation-Agent](https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent)
 
 ---
 

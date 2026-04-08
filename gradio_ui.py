@@ -1,69 +1,34 @@
 import gradio as gr
-import requests
-import uuid
-import json
 import traceback
-import os
-import time
+from environment import NegotiationEnvironment
+from models import NegotiationAction
 from scenarios import SCENARIOS
 
-# Configure connection details - allow override via environment variable
-API_URL = os.getenv("API_URL", "http://localhost:8000")
-MAX_RETRIES = 10
-RETRY_DELAY = 0.5
+print("[INFO] Gradio UI starting (single-process, direct environment calls)", flush=True)
 
-print(f"[INFO] Gradio UI initialized. Using API_URL: {API_URL}")
-
-def _retry_request(method, url, **kwargs):
-    """Retry a request with exponential backoff."""
-    for attempt in range(MAX_RETRIES):
-        try:
-            if method.lower() == "post":
-                return requests.post(url, **kwargs)
-            elif method.lower() == "get":
-                return requests.get(url, **kwargs)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            if attempt == MAX_RETRIES - 1:
-                # Last attempt failed, raise the error
-                print(f"[ERROR] Final attempt failed after {MAX_RETRIES} retries: {str(e)}")
-                raise
-            
-            wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff: 0.5s, 1s, 2s, 4s, 8s, etc.
-            print(f"[RETRY] Attempt {attempt + 1}/{MAX_RETRIES} failed, retrying in {wait_time}s... (Error: {type(e).__name__})")
-            time.sleep(wait_time)
-    return None
-
-def start_negotiation(task, session_id, chat_history):
-    if session_id:
-        return "Session already active", session_id, [], chat_history or [], 0.0, "0", chat_history or []
+def start_negotiation(task, session_state, chat_history):
+    """Initialize a new negotiation environment."""
+    if session_state:
+        return "Session already active", session_state, [], chat_history or [], 0.0, "0", chat_history or []
     
     try:
-        new_session_id = str(uuid.uuid4())
-        payload = {"task": task, "session_id": new_session_id}
+        # Create environment and reset
+        env = NegotiationEnvironment()
+        obs = env.reset(task)
         
-        # Use retry logic
-        response = _retry_request(
-            "post",
-            f"{API_URL}/reset",
-            json=payload,
-            timeout=10
-        )
-        
-        if not response or response.status_code != 200:
-            error_msg = f"Server error ({response.status_code if response else 'No response'}): {response.text if response else 'No response'}"
-            print(f"ERROR in start_negotiation: {error_msg}")
-            return error_msg, None, [], [], 0.0, "0", []
-        
-        data = response.json()
-        obs = data.get("observation", {})
+        # Store environment in session state
+        session_data = {
+            "env": env,
+            "task": task,
+        }
         
         # Get buyer targets from scenario
         scenario = SCENARIOS.get(task, {})
         buyer_targets = scenario.get("buyer_targets", {})
         
-        # Prepopulate offer table with actual targets
+        # Build offer table
         offer_table = []
-        current_offer = obs.get("current_offer", {})
+        current_offer = obs.current_offer
         
         if "price" in current_offer:
             target_price = buyer_targets.get("price", "N/A")
@@ -83,60 +48,46 @@ def start_negotiation(task, session_id, chat_history):
             target_payment = buyer_targets.get("payment_terms", "N/A")
             offer_table.append(["Payment", current_offer["payment_terms"], str(target_payment)])
         
-        vendor_msg = obs.get("vendor_message", "Negotiation started")
-        # Gradio chatbot expects tuples: [(user_msg, assistant_msg), ...]
+        vendor_msg = obs.vendor_message
         chatbot_history = [(None, vendor_msg)]
         
-        return "Negotiation started successfully!", new_session_id, offer_table, chatbot_history, 0.0, str(obs.get("round_number", 0)), chatbot_history
+        return "Negotiation started successfully!", session_data, offer_table, chatbot_history, 0.0, str(obs.round_number), chatbot_history
     
-    except requests.exceptions.ConnectionError as e:
-        error_msg = f"Cannot connect to server at {API_URL}. Is the FastAPI server running? Try waiting 5 seconds and refresh the page."
+    except Exception as e:
+        error_msg = f"Error starting negotiation: {str(e)}"
         print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
         return error_msg, None, [], [], 0.0, "0", []
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        print(f"ERROR in start_negotiation: {error_msg}\n{traceback.format_exc()}")
-        return error_msg, None, [], [], 0.0, "0", []
 
-def submit_offer(session_id, chat_history, move, price, sla, support, payment, justification, task):
-    if not session_id:
+def submit_offer(session_state, chat_history, move, price, sla, support, payment, justification, task):
+    """Submit an offer and get vendor response."""
+    if not session_state:
         return "Start negotiation first", [], chat_history or [], 0.0, "0", chat_history or []
     
     try:
-        action = {
-            "move": move,
-            "offer": {
+        env = session_state["env"]
+        
+        # Create action
+        action = NegotiationAction(
+            move=move,
+            offer={
                 "price": price,
                 "sla": sla,
                 "support_tier": support,
                 "payment_terms": payment
             },
-            "justification": justification
-        }
-        
-        # Use retry logic
-        response = _retry_request(
-            "post",
-            f"{API_URL}/step",
-            json={"session_id": session_id, "action": action},
-            timeout=10
+            justification=justification
         )
         
-        if not response or response.status_code != 200:
-            error_msg = f"Server error ({response.status_code if response else 'No response'}): {response.text if response else 'No response'}"
-            print(f"ERROR in submit_offer: {error_msg}")
-            return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
-        
-        data = response.json()
-        obs = data.get("observation", {})
+        # Execute step directly
+        obs, reward, done, info = env.step(action)
         
         # Get buyer targets from scenario
         scenario = SCENARIOS.get(task, {})
         buyer_targets = scenario.get("buyer_targets", {})
         
-        # Update offer table with actual targets
+        # Build offer table
         offer_table = []
-        current_offer = obs.get("current_offer", {})
+        current_offer = obs.current_offer
         
         if "price" in current_offer:
             target_price = buyer_targets.get("price", "N/A")
@@ -158,18 +109,18 @@ def submit_offer(session_id, chat_history, move, price, sla, support, payment, j
         
         chatbot_history = chat_history or []
         
-        # Add user and vendor messages to chatbot (as tuples for Gradio)
+        # Add user and vendor messages
         user_message = f"{move.capitalize()} | ${price} | SLA {sla}% | {support} | {payment}"
-        vendor_msg = obs.get("vendor_message", "Offer received")
+        vendor_msg = obs.vendor_message
         chatbot_history.append((user_message, vendor_msg))
         
-        # Update deal value and round
-        deal_value = obs.get("deal_value_so_far", 0.0)
-        round_num = str(obs.get("round_number", 0))
+        # Update deal value
+        deal_value = obs.deal_value_so_far
+        round_num = str(obs.round_number)
         
-        # Check if done
-        if data.get("done", False):
-            vendor_response = obs.get("vendor_response", "")
+        # Determine status
+        if done:
+            vendor_response = obs.vendor_response
             if vendor_response == "accepted":
                 status = "Deal signed successfully!"
             else:
@@ -179,13 +130,9 @@ def submit_offer(session_id, chat_history, move, price, sla, support, payment, j
         
         return status, offer_table, chatbot_history, deal_value, round_num, chatbot_history
     
-    except requests.exceptions.ConnectionError as e:
-        error_msg = f"Connection error: Cannot reach server at {API_URL}. The server may have crashed."
-        print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
-        return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        print(f"ERROR in submit_offer: {error_msg}\n{traceback.format_exc()}")
+        error_msg = f"Error submitting offer: {str(e)}"
+        print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
         return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
 
 
