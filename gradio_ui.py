@@ -7,8 +7,25 @@ from scenarios import SCENARIOS
 
 # Configure connection details
 API_URL = "http://localhost:8000"
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 RETRY_DELAY = 0.5
+
+def _retry_request(method, url, **kwargs):
+    """Retry a request with exponential backoff."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            if method.lower() == "post":
+                return requests.post(url, **kwargs)
+            elif method.lower() == "get":
+                return requests.get(url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt == MAX_RETRIES - 1:
+                raise  # Last attempt, raise the error
+            wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff
+            print(f"Connection attempt {attempt + 1}/{MAX_RETRIES} failed, retrying in {wait_time}s...")
+            import time
+            time.sleep(wait_time)
+    return None
 
 def start_negotiation(task, session_id, chat_history):
     if session_id:
@@ -18,14 +35,16 @@ def start_negotiation(task, session_id, chat_history):
         new_session_id = str(uuid.uuid4())
         payload = {"task": task, "session_id": new_session_id}
         
-        response = requests.post(
+        # Use retry logic
+        response = _retry_request(
+            "post",
             f"{API_URL}/reset",
             json=payload,
             timeout=10
         )
         
-        if response.status_code != 200:
-            error_msg = f"Server error ({response.status_code}): {response.text}"
+        if not response or response.status_code != 200:
+            error_msg = f"Server error ({response.status_code if response else 'No response'}): {response.text if response else 'No response'}"
             print(f"ERROR in start_negotiation: {error_msg}")
             return error_msg, None, [], [], 0.0, "0", []
         
@@ -64,7 +83,7 @@ def start_negotiation(task, session_id, chat_history):
         return "Negotiation started successfully!", new_session_id, offer_table, chatbot_history, 0.0, str(obs.get("round_number", 0)), chatbot_history
     
     except requests.exceptions.ConnectionError as e:
-        error_msg = f"Connection error: Cannot reach server at {API_URL}. Is the server running?"
+        error_msg = f"Cannot connect to server at {API_URL}. Is the FastAPI server running? Try waiting 5 seconds and refresh the page."
         print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
         return error_msg, None, [], [], 0.0, "0", []
     except Exception as e:
@@ -88,14 +107,16 @@ def submit_offer(session_id, chat_history, move, price, sla, support, payment, j
             "justification": justification
         }
         
-        response = requests.post(
+        # Use retry logic
+        response = _retry_request(
+            "post",
             f"{API_URL}/step",
             json={"session_id": session_id, "action": action},
             timeout=10
         )
         
-        if response.status_code != 200:
-            error_msg = f"Server error ({response.status_code}): {response.text}"
+        if not response or response.status_code != 200:
+            error_msg = f"Server error ({response.status_code if response else 'No response'}): {response.text if response else 'No response'}"
             print(f"ERROR in submit_offer: {error_msg}")
             return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
         
@@ -153,7 +174,7 @@ def submit_offer(session_id, chat_history, move, price, sla, support, payment, j
         return status, offer_table, chatbot_history, deal_value, round_num, chatbot_history
     
     except requests.exceptions.ConnectionError as e:
-        error_msg = f"Connection error: Cannot reach server at {API_URL}"
+        error_msg = f"Connection error: Cannot reach server at {API_URL}. The server may have crashed."
         print(f"ERROR: {error_msg}\n{traceback.format_exc()}")
         return error_msg, [], chat_history or [], 0.0, "0", chat_history or []
     except Exception as e:
