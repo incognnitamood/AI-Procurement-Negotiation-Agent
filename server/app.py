@@ -1,16 +1,17 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from environment import NegotiationEnvironment
 from models import NegotiationAction
+from typing import Optional, Dict, Any
 
 app = FastAPI()
 
 SESSIONS = {}
 
 @app.post("/reset")
-async def reset(request: dict):
+async def reset(request: Dict[str, Any] = Body(...)):
     try:
         # Support both "task" and "task_name" keys for compatibility
         task = request.get("task") or request.get("task_name", "saas_renewal")
@@ -30,7 +31,7 @@ async def reset(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step")
-async def step(request: dict):
+async def step(request: Dict[str, Any] = Body(...)):
     try:
         session_id = request.get("session_id")
         action_data = request.get("action")
@@ -72,13 +73,3 @@ async def get_state(session_id: str):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-def main():
-    """Main entry point for the FastAPI server."""
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
-if __name__ == "__main__":
-    main()
