@@ -51,7 +51,7 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 app = FastAPI(title="Procurement Negotiation OpenEnv")
 
 @app.post("/reset")
-async def reset(request: Dict[str, Any] = Body(...)):
+async def reset(request: Dict[str, Any] = Body(default={})):
     """
     Reset negotiation environment.
     
@@ -83,7 +83,7 @@ async def reset(request: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step")
-async def step(request: Dict[str, Any] = Body(...)):
+async def step(request: Dict[str, Any] = Body(default={})):
     """
     Execute one negotiation step.
     
