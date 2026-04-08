@@ -18,6 +18,7 @@ import json
 
 import gradio as gr
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from environment import NegotiationEnvironment
 from models import NegotiationAction
 from scenarios import SCENARIOS
@@ -170,6 +171,11 @@ async def get_state(session_id: str):
 async def health():
     """Health check endpoint."""
     return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    """Redirect root to Gradio UI."""
+    return RedirectResponse(url="/ui")
 
 # ============================================================================
 # GRADIO UI (for human interaction)
@@ -356,10 +362,13 @@ with gr.Blocks(title="🤝 Procurement Negotiation Simulator") as demo:
 
 # ============================================================================
 # MOUNT GRADIO ON FASTAPI (single process)
+# Mount Gradio at /ui/ path to avoid conflicting with API endpoints
 # ============================================================================
-app = gr.mount_gradio_app(app, demo, path="/")
+app = gr.mount_gradio_app(app, demo, path="/ui")
 
 if __name__ == "__main__":
     import uvicorn
     print("[INFO] Starting server on port 7860...")
+    print("[INFO] OpenEnv API endpoints: /reset, /step, /state, /health")
+    print("[INFO] Gradio UI: /ui")
     uvicorn.run(app, host="0.0.0.0", port=7860)
