@@ -1,4 +1,3 @@
-# 🧠 AI Procurement Negotiation Agent
 ---
 title: AI Procurement Negotiation Agent
 emoji: 🤝
@@ -10,7 +9,14 @@ app_file: gradio_ui.py
 pinned: false
 ---
 
-**An OpenEnv Environment for Training AI Agents to Negotiate Software Procurement Contracts**
+# 🧠 AI Procurement Negotiation Agent
+
+This agent uses a Hybrid AI Decision System to handle complex procurement negotiations.
+
+## ⚙️ Project Structure
+- `gradio_ui.py`: The main entry point for the Space.
+- `requirements.txt`: Python dependencies.
+- `server/app.py`: FastAPI backend logic.
 
 ---
 
