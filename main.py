@@ -308,7 +308,7 @@ with gr.Blocks(title="🤝 Procurement Negotiation Agent", theme=gr.themes.Soft(
 
 # Mount Gradio at /ui
 print("[INFO] Mounting Gradio UI at /ui", flush=True)
-app = gr.mount_gradio_app(app, demo, path="/ui")
+gr.mount_gradio_app(app, demo, path="/ui")
 
 def main():
     """Main entry point for the application."""
