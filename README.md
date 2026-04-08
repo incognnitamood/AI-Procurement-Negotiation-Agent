@@ -1,4 +1,14 @@
 # 🧠 AI Procurement Negotiation Agent
+---
+title: AI Procurement Negotiation Agent
+emoji: 🤝
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 4.44.1
+app_file: gradio_ui.py
+pinned: false
+---
 
 **An OpenEnv Environment for Training AI Agents to Negotiate Software Procurement Contracts**
 
