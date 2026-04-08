@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "procurement-negotiation-env"
+version = "1.0.0"
+description = "RL environment for training AI agents to negotiate software procurement contracts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Team", email = "team@example.com"},
+]
+keywords = ["negotiation", "procurement", "rl", "reinforcement-learning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "fastapi>=0.104",
+    "uvicorn[standard]>=0.24",
+    "pydantic>=2.0",
+    "openai>=1.0",
+    "gradio>=4.0",
+    "requests>=2.31",
+    "python-multipart>=0.0.6",
+    "openenv-core[cli]>=0.2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent"
+Repository = "https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent.git"
+
+[project.scripts]
+server = "server.app:main"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v --cov=. --cov-report=term-missing"

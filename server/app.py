@@ -1,0 +1,79 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from fastapi import FastAPI, HTTPException
+from environment import NegotiationEnvironment
+from models import NegotiationAction
+
+app = FastAPI()
+
+SESSIONS = {}
+
+@app.post("/reset")
+async def reset(request: dict):
+    try:
+        task = request.get("task")
+        session_id = request.get("session_id")
+        if not task or not session_id:
+            raise HTTPException(status_code=400, detail="Missing task or session_id")
+        
+        env = NegotiationEnvironment()
+        obs = env.reset(task)
+        SESSIONS[session_id] = env
+        
+        return {
+            "observation": obs.dict(),
+            "info": {"task": task, "session_id": session_id}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/step")
+async def step(request: dict):
+    try:
+        session_id = request.get("session_id")
+        action_data = request.get("action")
+        if not session_id or not action_data:
+            raise HTTPException(status_code=400, detail="Missing session_id or action")
+        
+        if session_id not in SESSIONS:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        env = SESSIONS[session_id]
+        action = NegotiationAction(**action_data)
+        obs, reward, done, info = env.step(action)
+        
+        return {
+            "observation": obs.dict(),
+            "reward": float(reward),
+            "done": bool(done),
+            "info": info
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/state")
+async def get_state(session_id: str):
+    try:
+        if session_id not in SESSIONS:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        env = SESSIONS[session_id]
+        state = env.state()
+        return {"state": state.dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+def main():
+    """Main entry point for the FastAPI server."""
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

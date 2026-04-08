@@ -1,0 +1,42 @@
+name: procurement-negotiation-env
+version: "1.0.0"
+description: >
+  RL environment for training AI agents to negotiate software procurement
+  contracts against a rule-based vendor simulator. Tasks range from a
+  simple SaaS renewal to a complex multi-vendor bundle negotiation.
+author: "Team"
+tags: [negotiation, procurement, business, rl, multi-step]
+api_url: "http://localhost:8000"
+tasks:
+  - name: saas_renewal
+    difficulty: easy
+    reward_range: [0.0, 1.0]
+    max_steps: 8
+    description: "Renew a SaaS contract, negotiate price and payment terms"
+  - name: cloud_infra_deal
+    difficulty: medium
+    reward_range: [0.0, 1.0]
+    max_steps: 12
+    description: "Negotiate cloud infrastructure across 4 dimensions"
+  - name: enterprise_bundle
+    difficulty: hard
+    reward_range: [0.0, 1.0]
+    max_steps: 18
+    description: "Multi-vendor bundle negotiation with a bundle trap to detect"
+action_space:
+  type: structured
+  fields:
+    move: "propose | accept | reject | counter"
+    offer: "dict — price (int), sla (float), support (str), payment (str)"
+    justification: "string — agent's reasoning"
+    split_products: "optional list of product names (hard task only)"
+observation_space:
+  type: structured
+  fields:
+    vendor_response: "accepted | countered | rejected | walkaway"
+    current_offer: "dict of current contract terms on the table"
+    vendor_message: "natural language message from vendor simulator"
+    round_number: "int"
+    concessions_made: "list of what both sides have given so far"
+    deal_value_so_far: "float — running reward shown to agent"
+    available_moves: "list of valid move strings"
