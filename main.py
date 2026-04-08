@@ -38,8 +38,13 @@ async def reset(request: Request):
         if "session_id" in body and body["session_id"] in SESSIONS:
             session_id = body["session_id"]
             obs = SESSIONS[session_id]["obs"]
+            obs_dict = obs.model_dump()
+            reward = obs_dict.pop("reward", None)
+            done = obs_dict.pop("done", None)
             return {
-                "observation": obs.model_dump(),
+                "observation": obs_dict,
+                "reward": float(reward) if reward is not None else 0.0,
+                "done": bool(done) if done is not None else False,
                 "info": {"task": task, "session_id": session_id}
             }
         
@@ -49,8 +54,14 @@ async def reset(request: Request):
         obs = env.reset(task)
         SESSIONS[session_id] = {"env": env, "obs": obs, "task": task}
         
+        obs_dict = obs.model_dump()
+        reward = obs_dict.pop("reward", None)
+        done = obs_dict.pop("done", None)
+        
         return {
-            "observation": obs.model_dump(),
+            "observation": obs_dict,
+            "reward": float(reward) if reward is not None else 0.0,
+            "done": bool(done) if done is not None else False,
             "info": {"task": task, "session_id": session_id}
         }
     except Exception as e:
@@ -81,10 +92,14 @@ async def step(request: Request):
         
         SESSIONS[session_id]["obs"] = obs
         
+        obs_dict = obs.model_dump()
+        obs_dict.pop("reward", None)
+        obs_dict.pop("done", None)
+        
         return {
-            "observation": obs.model_dump(),
-            "reward": float(reward),
-            "done": bool(done),
+            "observation": obs_dict,
+            "reward": float(reward) if reward is not None else 0.0,
+            "done": bool(done) if done is not None else False,
             "info": info
         }
     except Exception as e:
