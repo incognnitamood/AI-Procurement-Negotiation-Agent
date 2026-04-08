@@ -14,9 +14,10 @@ UI (for human interaction):
 import traceback
 from typing import Dict, Any, Optional
 import uuid
+import json
 
 import gradio as gr
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Request
 from environment import NegotiationEnvironment
 from models import NegotiationAction
 from scenarios import SCENARIOS
@@ -51,7 +52,7 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 app = FastAPI(title="Procurement Negotiation OpenEnv")
 
 @app.post("/reset")
-async def reset(request: Dict[str, Any] = Body(default={})):
+async def reset(request: Request):
     """
     Reset negotiation environment.
     
@@ -62,11 +63,17 @@ async def reset(request: Dict[str, Any] = Body(default={})):
         {"observation": {...}, "info": {"task": "...", "session_id": "..."}}
     """
     try:
-        task = request.get("task") or request.get("task_name", "saas_renewal")
+        # Parse request body - allow empty body
+        try:
+            body = await request.json()
+        except:
+            body = {}
+        
+        task = body.get("task") or body.get("task_name", "saas_renewal")
         
         # Create or reuse session
-        if "session_id" in request:
-            session_id = request["session_id"]
+        if "session_id" in body:
+            session_id = body["session_id"]
             if session_id in SESSIONS:
                 return {
                     "observation": SESSIONS[session_id]["obs"].model_dump(),
@@ -83,7 +90,7 @@ async def reset(request: Dict[str, Any] = Body(default={})):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step")
-async def step(request: Dict[str, Any] = Body(default={})):
+async def step(request: Request):
     """
     Execute one negotiation step.
     
@@ -106,8 +113,14 @@ async def step(request: Dict[str, Any] = Body(default={})):
         }
     """
     try:
-        session_id = request.get("session_id")
-        action_data = request.get("action")
+        # Parse request body
+        try:
+            body = await request.json()
+        except:
+            body = {}
+        
+        session_id = body.get("session_id")
+        action_data = body.get("action")
         
         if not session_id or not action_data:
             raise ValueError("Missing session_id or action")
