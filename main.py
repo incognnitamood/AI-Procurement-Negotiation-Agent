@@ -125,8 +125,12 @@ async def health():
     """Health check."""
     return {"status": "ok"}
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the application."""
     import uvicorn
     print("[INFO] OpenEnv API Server starting on 0.0.0.0:7860")
     print("[INFO] Endpoints: /reset (POST), /step (POST), /state (GET), /health (GET)")
     uvicorn.run(app, host="0.0.0.0", port=7860)
+
+if __name__ == "__main__":
+    main()
