@@ -15,12 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose ports
-EXPOSE 8000 7860
+# Expose single port (Gradio/FastAPI on 7860)
+EXPOSE 7860
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:7860/health || exit 1
 
-# Default command: run both FastAPI and Gradio
-CMD ["bash", "start.sh"]
+# Single-process command: run FastAPI + Gradio together
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
