@@ -42,8 +42,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent"
-Repository = "https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent.git"
+Homepage = "https://github.com/incognnitamoooddd/AI-Procurement-Negotiation-Agent"
+Repository = "https://github.com/incognnitamoooddd/AI-Procurement-Negotiation-Agent.git"
 
 [project.scripts]
 server = "server.app:main"

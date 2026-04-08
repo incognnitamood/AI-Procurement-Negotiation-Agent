@@ -400,7 +400,7 @@ docker build -t negotiation-env:latest .
 3. **If any test fails** → Debug using RISK_ASSESSMENT.md section "If Tests Fail"
 
 4. **Submit to judge**
-   - Repo: https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent
+   - Repo: https://github.com/incognnitamoooddd/AI-Procurement-Negotiation-Agent
    - Branch: main
    - Entry point: inference_llm.py
    - Expected scores: 0.583 / 0.744 / 1.000

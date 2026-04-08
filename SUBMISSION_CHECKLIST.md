@@ -266,6 +266,6 @@ docker run -p 8000:8000 -p 7860:7860 negotiation-env:latest
 ---
 
 **Project**: AI Procurement Negotiation Agent  
-**Owner**: incognnitamood  
+**Owner**: incognnitamoooddd  
 **Last Updated**: April 8, 2026  
 **Version**: 1.0.0

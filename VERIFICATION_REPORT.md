@@ -165,7 +165,7 @@ Total runtime: 1.20 seconds
    ```
 
 2. **Submit to judge**:
-   - Repository: https://github.com/incognnitamood/AI-Procurement-Negotiation-Agent
+   - Repository: https://github.com/incognnitamoooddd/AI-Procurement-Negotiation-Agent
    - Branch: main
    - Entry point: inference_llm.py
    - Baseline: 0.776 (excellent)
