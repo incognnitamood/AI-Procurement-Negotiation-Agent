@@ -15,16 +15,26 @@ import uuid
 import re
 from openai import OpenAI
 
-# Configuration
+# Configuration - Use hackathon-provided API credentials
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+API_KEY = os.getenv("API_KEY", os.getenv("HF_TOKEN", ""))  # Fallback to HF_TOKEN if API_KEY not set
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN", "")
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK = "procurement-negotiation-env"
 LLM_TIMEOUT = 20  # seconds
 
-# Initialize OpenAI client for HF router
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+# Initialize OpenAI client for hackathon LiteLLM proxy
+# Initialize OpenAI client for hackathon LiteLLM proxy (lazy loading - only when needed)
+client = None
+def get_client():
+    global client
+    if client is None:
+        try:
+            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        except Exception as e:
+            print(f"Error initializing OpenAI client: {e}", file=sys.stderr)
+            raise
+    return client
 
 # System prompt for LLM - STRICT SCHEMA ENFORCEMENT
 SYSTEM_PROMPT = """You are an expert procurement negotiator. Your job is to negotiate software contracts.
@@ -222,7 +232,7 @@ def call_model(messages):
     - Error logging
     """
     try:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
             max_tokens=256,

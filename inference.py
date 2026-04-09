@@ -21,8 +21,8 @@ import re
 
 # Configuration from environment variables
 API_BASE_URL = os.getenv('API_BASE_URL', 'https://router.huggingface.co/v1')
+API_KEY = os.getenv('API_KEY', os.getenv('HF_TOKEN', ''))  # Fallback to HF_TOKEN if API_KEY not set
 MODEL_NAME = os.getenv('MODEL_NAME', 'baseline-rule-based')
-HF_TOKEN = os.getenv('HF_TOKEN', '')
 
 # Constants for logging
 BENCHMARK = "procurement-negotiation-env"
@@ -32,7 +32,9 @@ USE_LLM = MODEL_NAME and MODEL_NAME.lower() != 'baseline-rule-based'
 if USE_LLM:
     try:
         from openai import OpenAI
-        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+        if not API_KEY:
+            raise ValueError("API_KEY environment variable is required")
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     except Exception as e:
         print(f"Warning: Could not initialize OpenAI client: {e}. Falling back to rule-based.", file=sys.stderr)
         USE_LLM = False
