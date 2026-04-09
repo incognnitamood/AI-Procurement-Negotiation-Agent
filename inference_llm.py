@@ -16,9 +16,10 @@ import re
 from openai import OpenAI
 
 # Configuration - Use hackathon-provided API credentials
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-API_KEY = os.getenv("API_KEY", os.getenv("HF_TOKEN", ""))  # Fallback to HF_TOKEN if API_KEY not set
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+# Matches official OpenEnv sample: HF_TOKEN (default) or API_KEY (hackathon override)
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK = "procurement-negotiation-env"
 LLM_TIMEOUT = 20  # seconds
