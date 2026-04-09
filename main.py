@@ -6,7 +6,7 @@ Single-process deployment with API and UI combined
 import traceback
 import uuid
 import json
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -132,7 +132,7 @@ async def health():
 
 # ==================== GRADIO UI ====================
 
-def start_negotiation(task: str) -> tuple:
+def start_negotiation(task: str) -> Tuple[str, str, str, str, str, float, str]:
     """Initialize negotiation via API."""
     try:
         api_url = "http://localhost:7860"
@@ -167,7 +167,7 @@ def send_action(
     sla: float,
     support_tier: str,
     justification: str
-) -> tuple:
+) -> Tuple[str, str, str, str, float, str]:
     """Submit action via API."""
     if not session_id:
         return ("❌ No active session", json.dumps({"error": "Start negotiation first"}, indent=2), "", "{}", 0.0, "0")
