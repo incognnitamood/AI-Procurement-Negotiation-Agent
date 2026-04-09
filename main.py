@@ -9,7 +9,6 @@ import json
 from typing import Dict, Any, Tuple
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import RedirectResponse
 import gradio as gr
 import requests
 
@@ -22,11 +21,6 @@ print("[INFO] Starting OpenEnv API Server with Gradio UI", flush=True)
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 app = FastAPI(title="Procurement Negotiation OpenEnv")
-
-@app.get("/")
-def root():
-    """Root endpoint - redirect to UI."""
-    return RedirectResponse(url="/ui")
 
 @app.post("/reset")
 async def reset(request: Request):
@@ -306,16 +300,16 @@ with gr.Blocks(title="🤝 Procurement Negotiation Agent", theme=gr.themes.Soft(
         outputs=[status_textbox, response_json, vendor_msg, current_offer, deal_value, round_num]
     )
 
-# Mount Gradio at /ui
-print("[INFO] Mounting Gradio UI at /ui", flush=True)
-gr.mount_gradio_app(app, demo, path="/ui")
+# Mount Gradio at root path
+print("[INFO] Mounting Gradio UI at /", flush=True)
+gr.mount_gradio_app(app, demo, path="/")
 
 def main():
     """Main entry point for the application."""
     import uvicorn
     print("[INFO] OpenEnv API Server + Gradio UI starting on 0.0.0.0:7860", flush=True)
     print("[INFO] API Endpoints: /reset (POST), /step (POST), /state (GET), /health (GET)", flush=True)
-    print("[INFO] UI available at http://localhost:7860/ui", flush=True)
+    print("[INFO] UI available at http://localhost:7860/", flush=True)
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
