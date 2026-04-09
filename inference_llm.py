@@ -17,13 +17,21 @@ import re
 from openai import OpenAI
 
 # Configuration - Use hackathon-provided API credentials
-# Matches official OpenEnv sample: HF_TOKEN (default) or API_KEY (hackathon override)
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+# CRITICAL: Check both API_KEY and HF_TOKEN, prioritize API_KEY for hackathon validation
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK = "procurement-negotiation-env"
 LLM_TIMEOUT = 20  # seconds
+
+# Debug: Log what credentials are being used (for hackathon validation)
+print(f"[CONFIG] API_KEY set: {'YES' if API_KEY else 'NO'} (first 10 chars: {API_KEY[:10] if API_KEY else 'N/A'}...)", flush=True)
+print(f"[CONFIG] API_BASE_URL: {API_BASE_URL}", flush=True)
+print(f"[CONFIG] MODEL_NAME: {MODEL_NAME}", flush=True)
+
+if not API_KEY:
+    raise ValueError("CRITICAL: API_KEY environment variable is not set! Cannot initialize LLM client.")
 
 # Initialize OpenAI client for hackathon LiteLLM proxy
 # Initialize OpenAI client for hackathon LiteLLM proxy (lazy loading - only when needed)
@@ -32,9 +40,11 @@ def get_client():
     global client
     if client is None:
         try:
+            print(f"[LLM] Initializing OpenAI client with API_BASE_URL: {API_BASE_URL}", flush=True)
             client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+            print(f"[LLM] OpenAI client initialized successfully", flush=True)
         except Exception as e:
-            print(f"Error initializing OpenAI client: {e}", file=sys.stderr)
+            print(f"[LLM] ERROR initializing OpenAI client: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
             raise
     return client
 
@@ -234,6 +244,7 @@ def call_model(messages):
     - Error logging
     """
     try:
+        print(f"[LLM] Making API call to {API_BASE_URL} with model {MODEL_NAME}...", flush=True)
         response = get_client().chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -241,16 +252,18 @@ def call_model(messages):
             temperature=0.3,
             timeout=LLM_TIMEOUT
         )
+        print(f"[LLM] API call successful! Response received.", flush=True)
         content = response.choices[0].message.content.strip()
         if not content:
-            print(f"WARNING: Empty LLM response, using fallback", flush=True)
+            print(f"[LLM] WARNING: Empty LLM response, using fallback", flush=True)
             return None
         return content
     except requests.Timeout:
-        print(f"WARNING: LLM call timeout ({LLM_TIMEOUT}s), using fallback logic", flush=True)
+        print(f"[LLM] WARNING: LLM call timeout ({LLM_TIMEOUT}s), using fallback logic", flush=True)
         return None
     except Exception as e:
-        print(f"WARNING: LLM call failed: {type(e).__name__}: {e}, using fallback logic", flush=True)
+        print(f"[LLM] WARNING: LLM call failed: {type(e).__name__}: {e}", flush=True)
+        print(f"[LLM] Using fallback logic (deterministic agent)", flush=True)
         return None
 
 

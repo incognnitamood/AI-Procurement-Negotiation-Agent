@@ -20,15 +20,28 @@ import os
 import re
 
 # Configuration from environment variables
-# Matches official OpenEnv sample: HF_TOKEN (default) or API_KEY (hackathon override)
-API_KEY = os.getenv('HF_TOKEN') or os.getenv('API_KEY')
+# CRITICAL: If API_KEY or API_BASE_URL is set (by hackathon validator), ALWAYS use LLM mode!
+API_KEY = os.getenv('API_KEY') or os.getenv('HF_TOKEN')  # Priority: API_KEY (hackathon) then HF_TOKEN
 API_BASE_URL = os.getenv('API_BASE_URL') or 'https://router.huggingface.co/v1'
-MODEL_NAME = os.getenv('MODEL_NAME') or 'baseline-rule-based'
+MODEL_NAME = os.getenv('MODEL_NAME') or 'Qwen/Qwen2.5-72B-Instruct'  # Default to LLM for hackathon
 
 # Constants for logging
 BENCHMARK = "procurement-negotiation-env"
 
-# Initialize OpenAI client only if using an LLM model
+# Hackathon detection: If API_KEY or API_BASE_URL is explicitly provided, delegate to inference_llm.py
+HACKATHON_MODE = bool(os.getenv('API_KEY') or os.getenv('API_BASE_URL'))
+
+if HACKATHON_MODE:
+    # HACKATHON VALIDATION: Delegate to inference_llm.py which properly uses the proxy
+    print("[REDIRECT] Hackathon validation detected! Delegating to inference_llm.py...", flush=True)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("inference_llm", "inference_llm.py")
+    inference_llm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inference_llm)
+    inference_llm.main()
+    sys.exit(0)
+
+# LOCAL MODE: Initialize OpenAI client only if using an LLM model
 USE_LLM = MODEL_NAME and MODEL_NAME.lower() != 'baseline-rule-based'
 if USE_LLM:
     try:
