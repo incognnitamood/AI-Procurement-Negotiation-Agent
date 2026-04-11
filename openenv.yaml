@@ -12,7 +12,7 @@ baseline_agent:
   command: "python"
   args: ["inference.py"]
   env:
-    - "API_KEY"
+    - "HF_TOKEN"
     - "API_BASE_URL"
     - "MODEL_NAME"
 tasks:

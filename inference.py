@@ -23,7 +23,7 @@ try:
 except ImportError:
     pass
 
-API_KEY = os.environ.get("API_KEY")
+HF_TOKEN = os.environ.get("HF_TOKEN", os.environ.get("API_KEY")) # Fallback for local testing
 API_BASE_URL = os.environ.get("API_BASE_URL")
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
@@ -32,16 +32,17 @@ BENCHMARK = "procurement-negotiation-env"
 LLM_TIMEOUT = 20  # seconds
 
 # Debug: Log what credentials are being used (for hackathon validation)
-print(f"[CONFIG] API_KEY set: {'YES' if API_KEY else 'NO'} (first 10 chars: {str(API_KEY)[:10] if API_KEY else 'N/A'}...)", flush=True)
+print(f"[CONFIG] HF_TOKEN set: {'YES' if HF_TOKEN else 'NO'} (first 10 chars: {str(HF_TOKEN)[:10] if HF_TOKEN else 'N/A'}...)", flush=True)
 print(f"[CONFIG] API_BASE_URL: {API_BASE_URL}", flush=True)
 print(f"[CONFIG] MODEL_NAME: {MODEL_NAME}", flush=True)
 
-if not API_KEY or not API_BASE_URL:
-    raise ValueError("CRITICAL: API_KEY/API_BASE_URL environment variables are not set! Cannot initialize LLM client.")
+if not HF_TOKEN or not API_BASE_URL:
+    raise ValueError("CRITICAL: HF_TOKEN/API_BASE_URL environment variables are not set! Cannot initialize LLM client.")
 
 # Initialize OpenAI client for hackathon LiteLLM proxy
 print(f"[LLM] Initializing OpenAI client...", flush=True)
-client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
+# Ensure we map the hackathon HF_TOKEN to the api_key parameter
+client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=HF_TOKEN)
 print(f"[LLM] OpenAI client initialized successfully", flush=True)
 
 # System prompt for LLM - STRICT SCHEMA ENFORCEMENT
