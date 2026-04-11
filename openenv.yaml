@@ -10,7 +10,7 @@ api_url: "http://localhost:8000"
 baseline_agent:
   type: "subprocess"
   command: "python"
-  args: ["inference_llm.py"]
+  args: ["inference.py"]
   env:
     - "API_KEY"
     - "API_BASE_URL"

@@ -16,10 +16,9 @@ import uuid
 import re
 from openai import OpenAI
 
-# Configuration - Use hackathon-provided API credentials
-# CRITICAL: Check both API_KEY and HF_TOKEN, prioritize API_KEY for hackathon validation
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+# Configuration - Use hackathon-provided API credentials only
+API_KEY = os.getenv("API_KEY")
+API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK = "procurement-negotiation-env"
@@ -30,8 +29,8 @@ print(f"[CONFIG] API_KEY set: {'YES' if API_KEY else 'NO'} (first 10 chars: {API
 print(f"[CONFIG] API_BASE_URL: {API_BASE_URL}", flush=True)
 print(f"[CONFIG] MODEL_NAME: {MODEL_NAME}", flush=True)
 
-if not API_KEY:
-    raise ValueError("CRITICAL: API_KEY environment variable is not set! Cannot initialize LLM client.")
+if not API_KEY or not API_BASE_URL:
+    raise ValueError("CRITICAL: API_KEY/API_BASE_URL environment variables are not set! Cannot initialize LLM client.")
 
 # Initialize OpenAI client for hackathon LiteLLM proxy
 # Initialize OpenAI client for hackathon LiteLLM proxy (lazy loading - only when needed)
@@ -41,7 +40,7 @@ def get_client():
     if client is None:
         try:
             print(f"[LLM] Initializing OpenAI client with API_BASE_URL: {API_BASE_URL}", flush=True)
-            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+            client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
             print(f"[LLM] OpenAI client initialized successfully", flush=True)
         except Exception as e:
             print(f"[LLM] ERROR initializing OpenAI client: {type(e).__name__}: {e}", file=sys.stderr, flush=True)

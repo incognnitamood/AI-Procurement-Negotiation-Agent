@@ -23,16 +23,8 @@ try:
 except ImportError:
     pass
 
-API_KEY = os.environ.get("API_KEY", os.getenv("HF_TOKEN"))
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
-
-# Ensure they exist in os.environ so the strictly parsed OpenAI initialization below doesn't throw a KeyError
-if API_KEY:
-    os.environ["API_KEY"] = API_KEY
-if API_BASE_URL:
-    os.environ['API_BASE_URL'] = API_BASE_URL
-
-os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+API_KEY = os.environ.get("API_KEY")
+API_BASE_URL = os.environ.get("API_BASE_URL")
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
@@ -44,8 +36,8 @@ print(f"[CONFIG] API_KEY set: {'YES' if API_KEY else 'NO'} (first 10 chars: {str
 print(f"[CONFIG] API_BASE_URL: {API_BASE_URL}", flush=True)
 print(f"[CONFIG] MODEL_NAME: {MODEL_NAME}", flush=True)
 
-if not API_KEY:
-    raise ValueError("CRITICAL: API_KEY environment variable is not set! Cannot initialize LLM client.")
+if not API_KEY or not API_BASE_URL:
+    raise ValueError("CRITICAL: API_KEY/API_BASE_URL environment variables are not set! Cannot initialize LLM client.")
 
 # Initialize OpenAI client for hackathon LiteLLM proxy
 client = None
@@ -53,8 +45,8 @@ def get_client():
     global client
     if client is None:
         print(f"[LLM] Initializing OpenAI client...", flush=True)
-        # The hackathon validator explicitly requires this exact string pattern
-        client = OpenAI(base_url=os.environ['API_BASE_URL'], api_key=os.environ['API_KEY'])
+        # The hackathon validator explicitly requires this exact string pattern.
+        client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
         print(f"[LLM] OpenAI client initialized successfully", flush=True)
     return client
 
