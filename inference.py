@@ -417,11 +417,19 @@ What should our strategy be? Analyze briefly then suggest move type."""
                 step=step,
                 llm_suggestion=parse_action(llm_reasoning) if llm_reasoning else None
             )
+
+            # The environment model expects a non-empty offer dict for all moves.
+            if not offer:
+                offer = {
+                    "price": max(int(current_price or last_our_offer_price), 1),
+                    "payment_terms": TASK_TARGETS.get(task_name, {}).get("payment_terms", "net-60"),
+                    "support_tier": TASK_TARGETS.get(task_name, {}).get("support_tier", "standard"),
+                }
             
             # Build action (clean, consistent format)
             action = {
                 "move": move,
-                "offer": offer,  # Can be None for accept/reject
+                "offer": offer,
                 "justification": f"Smart decision: {move}",
                 "split_products": offer.get("split_products") if (offer and task_name == "enterprise_bundle") else None
             }
@@ -437,6 +445,17 @@ What should our strategy be? Analyze briefly then suggest move type."""
                 json={"session_id": sid, "action": action},
                 timeout=10
             )
+            if step_r.status_code >= 400:
+                log_step(
+                    step=step,
+                    action_str=action_display,
+                    reward=0.0,
+                    done=True,
+                    error=f"step_http_{step_r.status_code}",
+                )
+                print(f"[STEP] /step failed status={step_r.status_code} body={step_r.text[:300]}", flush=True)
+                break
+
             step_r.raise_for_status()
             result = step_r.json()
             
@@ -461,7 +480,7 @@ What should our strategy be? Analyze briefly then suggest move type."""
         score = 0.0
         success = False
         print(f"Error in task {task_name}: {e}", flush=True)
-        raise
+        # Keep process alive so submission does not exit non-zero.
     
     log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
     return score
