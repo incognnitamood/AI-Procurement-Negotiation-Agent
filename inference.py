@@ -32,6 +32,8 @@ if API_KEY:
 if API_BASE_URL:
     os.environ['API_BASE_URL'] = API_BASE_URL
 
+os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK = "procurement-negotiation-env"
@@ -50,28 +52,10 @@ client = None
 def get_client():
     global client
     if client is None:
-        try:
-            print(f"[LLM] Initializing OpenAI client...", flush=True)
-            
-            # Temporary fix for httpx/openai proxy version conflicts in automated environments
-            import os as _os
-            _proxies_stash = {}
-            for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']:
-                if k in _os.environ:
-                    _proxies_stash[k] = _os.environ.pop(k)
-                    
-            # The hackathon validator explicitly requires this exact string pattern to pass the AST parse
-            client = OpenAI(base_url=os.environ['API_BASE_URL'], api_key=os.environ['API_KEY'])
-            
-            # Restore environment
-            for k, v in _proxies_stash.items():
-                _os.environ[k] = v
-                
-            print(f"[LLM] OpenAI client initialized successfully", flush=True)
-        except Exception as e:
-            print(f"[LLM] ERROR initializing OpenAI client: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
-            # Fallback to standard OpenAI init
-            client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        print(f"[LLM] Initializing OpenAI client...", flush=True)
+        # The hackathon validator explicitly requires this exact string pattern
+        client = OpenAI(base_url=os.environ['API_BASE_URL'], api_key=os.environ['API_KEY'])
+        print(f"[LLM] OpenAI client initialized successfully", flush=True)
     return client
 
 # System prompt for LLM - STRICT SCHEMA ENFORCEMENT
