@@ -17,14 +17,20 @@ import re
 from openai import OpenAI
 
 # Configuration - Use hackathon-provided API credentials
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 API_KEY = os.environ.get("API_KEY", os.getenv("HF_TOKEN"))
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api-inference.huggingface.co/v1/")
 
 # Ensure they exist in os.environ so the strictly parsed OpenAI initialization below doesn't throw a KeyError
 if API_KEY:
     os.environ["API_KEY"] = API_KEY
 if API_BASE_URL:
-    os.environ["API_BASE_URL"] = API_BASE_URL
+    os.environ['API_BASE_URL'] = API_BASE_URL
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
@@ -55,7 +61,7 @@ def get_client():
                     _proxies_stash[k] = _os.environ.pop(k)
                     
             # The hackathon validator explicitly requires this exact string pattern to pass the AST parse
-            client = OpenAI(base_url=os.environ["API_BASE_URL"], api_key=os.environ["API_KEY"])
+            client = OpenAI(base_url=os.environ['API_BASE_URL'], api_key=os.environ['API_KEY'])
             
             # Restore environment
             for k, v in _proxies_stash.items():
