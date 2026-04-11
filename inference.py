@@ -17,12 +17,14 @@ import re
 from openai import OpenAI
 
 # Configuration - Use hackathon-provided API credentials
-try:
-    API_KEY = os.environ["API_KEY"]
-    API_BASE_URL = os.environ["API_BASE_URL"]
-except KeyError:
-    API_KEY = os.getenv("HF_TOKEN")
-    API_BASE_URL = "https://router.huggingface.co/v1"
+API_KEY = os.environ.get("API_KEY", os.getenv("HF_TOKEN"))
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+
+# Ensure they exist in os.environ so the strictly parsed OpenAI initialization below doesn't throw a KeyError
+if API_KEY:
+    os.environ["API_KEY"] = API_KEY
+if API_BASE_URL:
+    os.environ["API_BASE_URL"] = API_BASE_URL
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
