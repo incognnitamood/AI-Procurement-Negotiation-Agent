@@ -7,6 +7,7 @@ import traceback
 import uuid
 import json
 from typing import Dict, Any, Tuple, List
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 import gradio as gr
@@ -143,19 +144,55 @@ def _fmt_currency(value: Any) -> str:
     return f"${_safe_float(value):,.0f}"
 
 
-def _deal_summary_card(obs: Dict[str, Any]) -> str:
+def _now_stamp() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _delta_arrow(current: Any, previous: Any, higher_is_better: bool = False) -> str:
+    curr = _safe_float(current)
+    prev = _safe_float(previous)
+    if prev <= 0 and curr <= 0:
+        return ""
+    if abs(curr - prev) < 1e-9:
+        return ""
+    if curr > prev:
+        return "↑" if higher_is_better else "↑"
+    return "↓"
+
+
+def _deal_summary_card(obs: Dict[str, Any], previous_offer: Dict[str, Any]) -> str:
     offer = _safe_offer(obs.get("current_offer", {}))
     price = _fmt_currency(offer.get("price", 0))
     sla = _safe_float(offer.get("sla", 0.0))
     support = str(offer.get("support_tier", "n/a")).title()
     payment = str(offer.get("payment_terms", "n/a")).title()
+    price_delta = _delta_arrow(offer.get("price"), previous_offer.get("price"), higher_is_better=False)
+    sla_delta = _delta_arrow(offer.get("sla"), previous_offer.get("sla"), higher_is_better=True)
+    support_delta = ""
+    prev_support = str(previous_offer.get("support_tier", "")).lower()
+    curr_support = str(offer.get("support_tier", "")).lower()
+    support_rank = {"standard": 1, "business": 2, "premium": 3}
+    if support_rank.get(curr_support, 0) > support_rank.get(prev_support, 0):
+        support_delta = "↑"
+    elif support_rank.get(curr_support, 0) < support_rank.get(prev_support, 0):
+        support_delta = "↓"
+
+    payment_delta = ""
+    term_rank = {"net-30": 1, "net-45": 2, "net-60": 3, "net-90": 4}
+    prev_pay = str(previous_offer.get("payment_terms", "")).lower()
+    curr_pay = str(offer.get("payment_terms", "")).lower()
+    if term_rank.get(curr_pay, 0) > term_rank.get(prev_pay, 0):
+        payment_delta = "↑"
+    elif term_rank.get(curr_pay, 0) < term_rank.get(prev_pay, 0):
+        payment_delta = "↓"
+
     return f"""
     <div class='card'>
       <h3>Deal Summary</h3>
-      <div class='metric-row'><span>Price</span><strong>{price}</strong></div>
-      <div class='metric-row'><span>SLA</span><strong>{sla:.2f}%</strong></div>
-      <div class='metric-row'><span>Support</span><strong>{support}</strong></div>
-      <div class='metric-row'><span>Payment</span><strong>{payment}</strong></div>
+      <div class='metric-row'><span>Price</span><strong>{price} <span class='delta'>{price_delta}</span></strong></div>
+      <div class='metric-row'><span>SLA</span><strong>{sla:.2f}% <span class='delta'>{sla_delta}</span></strong></div>
+      <div class='metric-row'><span>Support</span><strong>{support} <span class='delta'>{support_delta}</span></strong></div>
+      <div class='metric-row'><span>Payment</span><strong>{payment} <span class='delta'>{payment_delta}</span></strong></div>
     </div>
     """
 
@@ -164,14 +201,14 @@ def _score_card(obs: Dict[str, Any]) -> str:
     score = max(0.0, min(1.0, _safe_float(obs.get("deal_value_so_far", 0.0))))
     pct = int(score * 100)
     round_num = int(_safe_float(obs.get("round_number", 0.0), 0.0))
-    if pct < 35:
-        label = "Bad"
+    if pct < 30:
+        label = "Poor deal"
         cls = "score-bad"
     elif pct < 70:
-        label = "Mid"
+        label = "Fair deal"
         cls = "score-mid"
     else:
-        label = "Good"
+        label = "Great deal"
         cls = "score-good"
     return f"""
     <div class='card'>
@@ -244,6 +281,77 @@ def _strategy_hint(obs: Dict[str, Any]) -> str:
     return "Hint: Vendor is conceding incrementally. Move one lever at a time to preserve bargaining power."
 
 
+def _vendor_behavior_insight(previous_offer: Dict[str, Any], current_offer: Dict[str, Any], vendor_response: str) -> str:
+    insights: List[str] = []
+    prev_price = _safe_float(previous_offer.get("price"))
+    curr_price = _safe_float(current_offer.get("price"))
+    prev_sla = _safe_float(previous_offer.get("sla"))
+    curr_sla = _safe_float(current_offer.get("sla"))
+    term_rank = {"net-30": 1, "net-45": 2, "net-60": 3, "net-90": 4}
+    prev_term = term_rank.get(str(previous_offer.get("payment_terms", "")).lower(), 0)
+    curr_term = term_rank.get(str(current_offer.get("payment_terms", "")).lower(), 0)
+
+    if prev_price > 0 and curr_price > 0:
+        delta_pct = ((prev_price - curr_price) / prev_price) * 100
+        if delta_pct > 3:
+            insights.append("Flexible on price")
+        elif delta_pct < 1:
+            insights.append("Resistant on price")
+
+    if curr_sla > prev_sla:
+        insights.append("Flexible on SLA")
+    elif curr_sla <= prev_sla and vendor_response == "countered":
+        insights.append("Holding SLA firm")
+
+    if curr_term > prev_term:
+        insights.append("Prefers longer payment cycles")
+    elif curr_term < prev_term:
+        insights.append("Open to faster payment")
+
+    if not insights:
+        insights.append("Testing your negotiation boundary")
+
+    return "Vendor Insight:\n\n" + "\n".join([f"- {item}" for item in insights])
+
+
+def _round_progress(round_num: int, max_rounds: int) -> str:
+    round_num = max(0, min(max_rounds, round_num))
+    active = round_num if round_num > 0 else 1
+    nodes = []
+    for idx in range(1, max_rounds + 1):
+        cls = "node active" if idx <= active else "node"
+        nodes.append(f"<span class='{cls}'></span>")
+    return (
+        "<div class='card'>"
+        "<h3>Round Progress</h3>"
+        f"<div class='round-track'>{''.join(nodes)}</div>"
+        f"<div class='muted'>Round {round_num} of {max_rounds}</div>"
+        "</div>"
+    )
+
+
+def _suggested_move(obs: Dict[str, Any]) -> str:
+    offer = _safe_offer(obs.get("current_offer", {}))
+    price = _safe_float(offer.get("price", 0.0))
+    sla = _safe_float(offer.get("sla", 99.5))
+    payment = str(offer.get("payment_terms", "net-30")).lower()
+    suggested_price = max(70000.0, price * 0.95)
+    next_payment = "net-60" if payment in {"net-30", "net-45"} else payment
+    return (
+        "Recommended Move:\n"
+        f"- Lower price to {_fmt_currency(suggested_price)}\n"
+        f"- Push payment to {next_payment}\n"
+        f"- Keep SLA near {sla:.2f}%\n"
+        "- Keep support unchanged for leverage"
+    )
+
+
+def suggest_best_move(last_obs: Dict[str, Any], current_hint: str) -> str:
+    if not last_obs:
+        return "Hint: Start a negotiation first."
+    return current_hint + "\n\n" + _suggested_move(last_obs)
+
+
 def _timeline_markdown(lines: List[str]) -> str:
     if not lines:
         return "No negotiation rounds yet."
@@ -251,16 +359,34 @@ def _timeline_markdown(lines: List[str]) -> str:
 
 
 def _user_offer_text(move: str, price: float, sla: float, support_tier: str, payment_terms: str, note: str) -> str:
+    stamp = _now_stamp()
     base = (
-        f"You: {move.upper()} | Price {_fmt_currency(price)} | SLA {sla:.2f}% | "
-        f"Support {support_tier.title()} | {payment_terms.title()}"
+        f"[{stamp}] You\n"
+        f"Offering {_fmt_currency(price)}, {payment_terms.title()}, {support_tier.title()} support, SLA {sla:.2f}%\n"
+        f"Move: {move.upper()}"
     )
     if note.strip():
-        return f"{base}\nNote: {note.strip()}"
+        return f"{base}\nMessage: {note.strip()}"
     return base
 
 
-def start_negotiation(task: str) -> Tuple[str, str, List[Tuple[str, str]], str, str, str, List[str], str, str]:
+def _sync_slider_to_number(slider_value: float, number_value: float):
+    slider_int = int(round(_safe_float(slider_value, 0.0)))
+    number_int = int(round(_safe_float(number_value, 0.0)))
+    if slider_int == number_int:
+        return gr.update()
+    return slider_int
+
+
+def _sync_number_to_slider(number_value: float, slider_value: float):
+    number_int = int(round(_safe_float(number_value, 0.0)))
+    slider_int = int(round(_safe_float(slider_value, 0.0)))
+    if number_int == slider_int:
+        return gr.update()
+    return number_int
+
+
+def start_negotiation(task: str) -> Tuple[str, str, List[Tuple[str, str]], str, str, str, List[str], str, str, str, Dict[str, Any]]:
     """Initialize negotiation via API and render dashboard cards."""
     try:
         api_url = "http://localhost:7860"
@@ -272,21 +398,27 @@ def start_negotiation(task: str) -> Tuple[str, str, List[Tuple[str, str]], str, 
         obs = data["observation"]
         current_offer = _safe_offer(obs.get("current_offer", {}))
         vendor_text = _vendor_move_highlight({}, current_offer, str(obs.get("vendor_response", "initial")), str(obs.get("vendor_message", "")))
-        chat_history = [(f"Session started for {task}", vendor_text)]
+        vendor_chat = f"[{_now_stamp()}] Vendor\n{vendor_text}"
+        chat_history = [(f"[{_now_stamp()}] You\nLet's negotiate this {task} deal.", vendor_chat)]
 
         timeline = [f"Round {int(_safe_float(obs.get('round_number', 0), 0.0))}: Session initialized"]
+        max_rounds = {"saas_renewal": 8, "cloud_infra_deal": 12, "enterprise_bundle": 18}.get(task, 12)
+        insight = _vendor_behavior_insight({}, current_offer, str(obs.get("vendor_response", "initial")).lower())
 
         status = f"Session started: {session_id[:8]}..."
         return (
             status,
             session_id,
             chat_history,
-            _deal_summary_card(obs),
+            _deal_summary_card(obs, {}),
             _score_card(obs),
             _timeline_markdown(timeline),
             timeline,
             _strategy_hint(obs),
+            insight,
+            _round_progress(int(_safe_float(obs.get("round_number", 0.0), 0.0)), max_rounds),
             json.dumps(data, indent=2),
+            obs,
         )
     except Exception as e:
         error_msg = f"Error: {str(e)}"
@@ -300,7 +432,10 @@ def start_negotiation(task: str) -> Tuple[str, str, List[Tuple[str, str]], str, 
             "No negotiation rounds yet.",
             [],
             "Hint: Start a negotiation to get strategy suggestions.",
+            "Vendor Insight:\n\n- No active signal yet.",
+            "<div class='card'><h3>Round Progress</h3><div class='muted'>No round yet.</div></div>",
             json.dumps({"error": str(e)}, indent=2),
+            {},
         )
 
 
@@ -308,13 +443,15 @@ def send_action(
     session_id: str,
     chat_history: List[Tuple[str, str]],
     timeline: List[str],
+    last_obs: Dict[str, Any],
+    task: str,
     move: str,
     price: float,
     payment_terms: str,
     sla: float,
     support_tier: str,
     note: str,
-) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str]:
+) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str, str, Dict[str, Any]]:
     """Submit action via API and update chat dashboard."""
     if not session_id:
         return (
@@ -325,17 +462,17 @@ def send_action(
             _timeline_markdown(timeline or []),
             timeline or [],
             "Hint: Start a negotiation first.",
+            "Vendor Insight:\n\n- Start a session to infer behavior.",
+            "<div class='card'><h3>Round Progress</h3><div class='muted'>No round yet.</div></div>",
             json.dumps({"error": "Start negotiation first"}, indent=2),
+            last_obs or {},
         )
 
     try:
         api_url = "http://localhost:7860"
         current_history = list(chat_history or [])
         current_timeline = list(timeline or [])
-
-        prev_offer: Dict[str, Any] = {}
-        if current_history and isinstance(current_history[-1], tuple):
-            pass
+        previous_offer = _safe_offer((last_obs or {}).get("current_offer", {}))
 
         action = {
             "move": move,
@@ -362,20 +499,15 @@ def send_action(
         done = bool(data.get("done", False))
         offer = _safe_offer(obs.get("current_offer", {}))
 
-        previous_offer = {
-            "price": float(price),
-            "sla": float(sla),
-            "support_tier": support_tier,
-            "payment_terms": payment_terms,
-        }
         vendor_text = _vendor_move_highlight(
             previous_offer,
             offer,
             str(obs.get("vendor_response", "countered")),
             str(obs.get("vendor_message", "")),
         )
+        vendor_chat = f"[{_now_stamp()}] Vendor\n{vendor_text}"
 
-        current_history.append((user_text, vendor_text))
+        current_history.append((user_text, vendor_chat))
 
         round_number = int(_safe_float(obs.get("round_number", 0.0), 0.0))
         current_timeline.append(
@@ -386,15 +518,21 @@ def send_action(
         if done:
             status += f" | Final Score: {_safe_float(obs.get('deal_value_so_far', 0.0)):.3f}"
 
+        max_rounds = {"saas_renewal": 8, "cloud_infra_deal": 12, "enterprise_bundle": 18}.get(task, 12)
+        insight = _vendor_behavior_insight(previous_offer, offer, str(obs.get("vendor_response", "")).lower())
+
         return (
             status,
             current_history,
-            _deal_summary_card(obs),
+            _deal_summary_card(obs, previous_offer),
             _score_card(obs),
             _timeline_markdown(current_timeline),
             current_timeline,
             _strategy_hint(obs),
+            insight,
+            _round_progress(round_number, max_rounds),
             json.dumps(data, indent=2),
+            obs,
         )
     except Exception as e:
         error_msg = f"Error: {str(e)}"
@@ -407,7 +545,10 @@ def send_action(
             _timeline_markdown(timeline or []),
             timeline or [],
             "Hint: Adjust your offer and retry.",
+            "Vendor Insight:\n\n- Unable to infer behavior from failed action.",
+            "<div class='card'><h3>Round Progress</h3><div class='muted'>No update.</div></div>",
             json.dumps({"error": str(e)}, indent=2),
+            last_obs or {},
         )
 
 
@@ -415,24 +556,28 @@ def send_accept(
     session_id: str,
     chat_history: List[Tuple[str, str]],
     timeline: List[str],
+    last_obs: Dict[str, Any],
+    task: str,
     price: float,
     payment_terms: str,
     sla: float,
     support_tier: str,
-) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str]:
-    return send_action(session_id, chat_history, timeline, "accept", price, payment_terms, sla, support_tier, "Accepting current terms")
+) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str, str, Dict[str, Any]]:
+    return send_action(session_id, chat_history, timeline, last_obs, task, "accept", price, payment_terms, sla, support_tier, "Accepting current terms")
 
 
 def send_reject(
     session_id: str,
     chat_history: List[Tuple[str, str]],
     timeline: List[str],
+    last_obs: Dict[str, Any],
+    task: str,
     price: float,
     payment_terms: str,
     sla: float,
     support_tier: str,
-) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str]:
-    return send_action(session_id, chat_history, timeline, "reject", price, payment_terms, sla, support_tier, "Rejecting offer")
+) -> Tuple[str, List[Tuple[str, str]], str, str, str, List[str], str, str, str, Dict[str, Any]]:
+    return send_action(session_id, chat_history, timeline, last_obs, task, "reject", price, payment_terms, sla, support_tier, "Rejecting offer")
 
 
 APP_CSS = """
@@ -442,13 +587,27 @@ body { background: radial-gradient(circle at 10% 10%, #1f2937, #0f172a 45%, #020
 .card { border: 1px solid rgba(148,163,184,0.25); border-radius: 14px; background: rgba(15, 23, 42, 0.8); padding: 14px 16px; margin-bottom: 10px; }
 .card h3 { margin: 0 0 10px 0; font-size: 18px; }
 .metric-row { display: flex; justify-content: space-between; margin: 7px 0; font-size: 15px; }
+.delta { font-size: 14px; color: #38bdf8; }
 .muted { color: #94a3b8; font-size: 13px; margin-top: 8px; }
 .score-line { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
 .score-track { width: 100%; height: 11px; background: rgba(148,163,184,0.25); border-radius: 999px; overflow: hidden; }
-.score-fill { height: 100%; border-radius: 999px; }
-.score-bad { background: linear-gradient(90deg, #ef4444, #f97316); }
-.score-mid { background: linear-gradient(90deg, #eab308, #f59e0b); }
+.score-fill { height: 100%; border-radius: 999px; transition: width 0.45s ease-in-out; }
+.score-bad { background: linear-gradient(90deg, #dc2626, #f97316); }
+.score-mid { background: linear-gradient(90deg, #f59e0b, #facc15); }
 .score-good { background: linear-gradient(90deg, #22c55e, #10b981); }
+.round-track { display: flex; gap: 8px; margin-top: 8px; }
+.node { width: 12px; height: 12px; border-radius: 50%; background: rgba(148,163,184,0.35); display: inline-block; }
+.node.active { background: linear-gradient(135deg, #0ea5e9, #22c55e); box-shadow: 0 0 12px rgba(56, 189, 248, 0.6); }
+.message { animation: fadeUp 0.35s ease; }
+#accept-btn { background: #15803d !important; color: white !important; border-color: #22c55e !important; }
+#accept-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+#reject-btn { background: #b91c1c !important; color: white !important; border-color: #ef4444 !important; }
+#reject-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+#send-btn:hover, #accept-btn:hover, #reject-btn:hover { transition: all 0.2s ease; }
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 """
 
 
@@ -459,6 +618,8 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
 
     session_id_state = gr.State("")
     timeline_state = gr.State([])
+    task_state = gr.State("saas_renewal")
+    last_obs_state = gr.State({})
 
     with gr.Row():
         with gr.Column(scale=7, elem_classes=["panel"]):
@@ -473,7 +634,7 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
 
             status_textbox = gr.Textbox(label="Session Status", interactive=False, lines=1)
 
-            chatbot = gr.Chatbot(label="Negotiation Chat", height=480, bubble_full_width=False)
+            chatbot = gr.Chatbot(label="Negotiation Chat", height=480, bubble_full_width=False, elem_classes=["message"])
 
             gr.Markdown("### Compose Offer")
             with gr.Row():
@@ -503,21 +664,24 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             note_box = gr.Textbox(label="Negotiation Message", placeholder="Example: We can move on SLA if you improve payment terms.", lines=2)
 
             with gr.Row():
-                send_btn = gr.Button("Send Offer", variant="primary", scale=2)
-                accept_btn = gr.Button("Accept Deal", variant="secondary", scale=1)
-                reject_btn = gr.Button("Reject Deal", variant="stop", scale=1)
+                send_btn = gr.Button("Send Offer", variant="primary", scale=2, elem_id="send-btn")
+                accept_btn = gr.Button("Accept Deal", variant="secondary", scale=1, elem_id="accept-btn")
+                reject_btn = gr.Button("Reject Deal", variant="stop", scale=1, elem_id="reject-btn")
+                suggest_btn = gr.Button("Suggest Best Move", variant="secondary", scale=2)
 
         with gr.Column(scale=5, elem_classes=["panel"]):
             deal_summary_html = gr.HTML("<div class='card'><h3>Deal Summary</h3><div class='muted'>Start a negotiation to view metrics.</div></div>")
             score_html = gr.HTML("<div class='card'><h3>Negotiation Score</h3><div class='muted'>No score yet.</div></div>")
             hint_markdown = gr.Markdown("Hint: Start a negotiation to get strategy suggestions.")
+            behavior_markdown = gr.Markdown("Vendor Insight:\n\n- Start a negotiation to infer behavior.")
+            round_progress_html = gr.HTML("<div class='card'><h3>Round Progress</h3><div class='muted'>No round yet.</div></div>")
             timeline_markdown = gr.Markdown("No negotiation rounds yet.")
-            with gr.Accordion("Technical Response (Optional)", open=False):
+            with gr.Accordion("Advanced / Debug", open=False):
                 response_json = gr.Textbox(label="API Response", lines=10, interactive=False)
 
-    # Sync slider + numeric input
-    price_slider.change(lambda x: x, inputs=[price_slider], outputs=[price_number])
-    price_number.change(lambda x: x, inputs=[price_number], outputs=[price_slider])
+    # Sync slider + numeric input without circular update loops
+    price_slider.change(_sync_slider_to_number, inputs=[price_slider, price_number], outputs=[price_number])
+    price_number.change(_sync_number_to_slider, inputs=[price_number, price_slider], outputs=[price_slider])
 
     # Event handlers
     start_btn.click(
@@ -532,9 +696,14 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             timeline_markdown,
             timeline_state,
             hint_markdown,
+            behavior_markdown,
+            round_progress_html,
             response_json,
+            last_obs_state,
         ],
     )
+
+    start_btn.click(lambda t: t, inputs=[task_dropdown], outputs=[task_state])
 
     send_btn.click(
         send_action,
@@ -542,6 +711,8 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             session_id_state,
             chatbot,
             timeline_state,
+            last_obs_state,
+            task_state,
             move_dropdown,
             price_number,
             payment_radio,
@@ -557,7 +728,10 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             timeline_markdown,
             timeline_state,
             hint_markdown,
+            behavior_markdown,
+            round_progress_html,
             response_json,
+            last_obs_state,
         ],
     )
 
@@ -567,6 +741,8 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             session_id_state,
             chatbot,
             timeline_state,
+            last_obs_state,
+            task_state,
             price_number,
             payment_radio,
             sla_slider,
@@ -580,7 +756,10 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             timeline_markdown,
             timeline_state,
             hint_markdown,
+            behavior_markdown,
+            round_progress_html,
             response_json,
+            last_obs_state,
         ],
     )
 
@@ -590,6 +769,8 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             session_id_state,
             chatbot,
             timeline_state,
+            last_obs_state,
+            task_state,
             price_number,
             payment_radio,
             sla_slider,
@@ -603,8 +784,17 @@ with gr.Blocks(title="Negotiation Dashboard", theme=gr.themes.Base(), css=APP_CS
             timeline_markdown,
             timeline_state,
             hint_markdown,
+            behavior_markdown,
+            round_progress_html,
             response_json,
+            last_obs_state,
         ],
+    )
+
+    suggest_btn.click(
+        suggest_best_move,
+        inputs=[last_obs_state, hint_markdown],
+        outputs=[hint_markdown],
     )
 
 # Mount Gradio at root path
