@@ -27,7 +27,7 @@ API_KEY = os.environ.get("API_KEY")
 API_BASE_URL = os.environ.get("API_BASE_URL")
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
+ENV_URL = os.getenv("ENV_URL", "https://incognnitamoooddd-ai-procurement-negotiation-agent.hf.space")
 BENCHMARK = "procurement-negotiation-env"
 LLM_TIMEOUT = 20  # seconds
 
@@ -461,6 +461,7 @@ What should our strategy be? Analyze briefly then suggest move type."""
         score = 0.0
         success = False
         print(f"Error in task {task_name}: {e}", flush=True)
+        raise
     
     log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
     return score
