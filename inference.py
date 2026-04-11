@@ -469,15 +469,17 @@ What should our strategy be? Analyze briefly then suggest move type."""
             if done:
                 break
         
-        # Calculate final score
+        # Calculate final score and keep it strictly within (0, 1).
+        # Use 0.01..0.99 so the 2-decimal log output never becomes 0.00 or 1.00.
         total_reward = sum(rewards)
-        score = min(total_reward, 1.0)
+        raw_score = max(0.0, min(total_reward, 1.0))
+        score = min(max(raw_score, 0.01), 0.99)
         success = score >= 0.10
     
     except Exception as e:
         log_step(step=steps_taken + 1, action_str="error", reward=0.0, done=True, error=str(e))
         rewards.append(0.0)
-        score = 0.0
+        score = 0.01
         success = False
         print(f"Error in task {task_name}: {e}", flush=True)
         # Keep process alive so submission does not exit non-zero.
